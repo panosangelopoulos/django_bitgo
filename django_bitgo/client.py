@@ -1,4 +1,3 @@
-from re import L
 import requests
 import os
 from django.conf import settings
@@ -19,15 +18,26 @@ class BitGoClient(object):
         if not self.access_token:
             raise BitGoException("Access token is required to create a BitGoClient")
 
-    def request(self, method="GET", headers={}, path="", payload={}):
-        headers["Authorization"] = f"Bearer {self.access_token}"
+    def request(self, method="GET", headers=None, path="", payload=None, params=None):
+        headers = {**(headers or {}), "Authorization": f"Bearer {self.access_token}"}
 
-        return requests.request(
-            method=method,
-            url=f"{self.get_api_url()}{settings.BITGO_API_VERSION}{path}",
-            headers=headers,
-            data=payload,
-        )
+        try:
+            response = requests.request(
+                method=method,
+                url=f"{self.get_api_url()}{settings.BITGO_API_VERSION}{path}",
+                headers=headers,
+                json=payload or None,
+                params=params or None,
+            )
+        except requests.exceptions.RequestException as e:
+            raise BitGoException(f"A connection error raised! {str(e)}")
+
+        try:
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            raise BitGoException(f"BitGo API returned an error: {str(e)}") from e
+
+        return response
 
     def get_api_url(self):
         return settings.BITGO_API_URL

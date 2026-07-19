@@ -12,8 +12,8 @@ Django BitGo is a powerful and flexible library for connecting your BitGo accoun
 
 # Requirements
 
-- Python (3.7, 3.8, 3.9, 3.10)
-- Django (3.2, 4.0, 4.1)
+- Python (3.9, 3.10, 3.11, 3.12, 3.13)
+- Django (4.2, 5.0, 5.1, 5.2)
 
 We **highly recommend** and only officially support the latest patch release of
 each Python and Django series.
@@ -45,13 +45,40 @@ INSTALLED_APPS = [
 
 The top-level module for wallets.
 
-Refer to the [documentation](https://api.bitgo.com/docs/#tag/Address) for details on the use of this package.
+Refer to the [BitGo API documentation](https://developers.bitgo.com/) for details on the underlying endpoints.
+
+### Wallet
+
+```python
+from django_bitgo.wallets.wallet import Wallet
+
+wallet = Wallet()
+wallet.list_wallets(coin=COIN)
+wallet.get_wallet(wallet_id=WALLET_ID, coin=COIN)
+
+# `payload` must already contain pre-generated keys (`keys`, `m`, `n`, ...) -
+# this library does not generate or custody keys for you.
+wallet.create_wallet(coin=COIN, payload=payload)
+```
 
 ### Address
 
-Example of get an address object.
+```python
+from django_bitgo.wallets.address import Address
 
+address = Address(wallet_id=WALLET_ID)
+address.get_address(address_id=ADDRESS_ID, coin=COIN)
+address.list_addresses(coin=COIN)
+address.create_address(coin=COIN, payload=payload)
+address.deploy_address(address_id=ADDRESS_ID, coin=COIN)
 ```
-    address = Address()
-    address.get_address(address_id=ADDRESS_ID, coin=COIN, wallet_id=WALLET_ID)
+
+### Transfer
+
+```python
+from django_bitgo.wallets.transfer import Transfer
+
+transfer = Transfer(wallet_id=WALLET_ID)
+transfer.list_transfers(coin=COIN)
+transfer.get_transfer(transfer_id=TRANSFER_ID, coin=COIN)
 ```

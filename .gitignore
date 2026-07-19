@@ -129,7 +129,6 @@ dmypy.json
 .pyre/
 
 
-settings_testing_locally.py
 manage.py
 asgi.py
 wsgi.py

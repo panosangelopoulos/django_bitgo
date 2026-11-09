@@ -1,81 +1,259 @@
-# django_bitgo
+# django-bitgo
 
-Django library for BitGo
+A Django library for the [BitGo](https://www.bitgo.com/) Platform API: wallets,
+addresses, transfers, webhooks, policies and approvals, plus sending funds through
+BitGo Express.
 
+[![CI](https://github.com/panosangelopoulos/django_bitgo/actions/workflows/ci.yml/badge.svg)](https://github.com/panosangelopoulos/django_bitgo/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/django-bitgo)](https://pypi.org/project/django-bitgo/)
+[![Python versions](https://img.shields.io/pypi/pyversions/django-bitgo)](https://pypi.org/project/django-bitgo/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Downloads](https://static.pepy.tech/personalized-badge/django-bitgo?period=month&units=international_system&left_color=black&right_color=blue&left_text=Downloads)](https://pepy.tech/project/django-bitgo)
 
-# Overview
+- **Thin and predictable.** Every method maps to one BitGo endpoint and returns the
+  decoded JSON response.
+- **Covers wallet custody on `/api/v2`.** Wallets, addresses, transfers, webhooks,
+  policies, sharing, transaction requests, pending approvals, keychains, enterprises
+  and users.
+- **Signing through BitGo Express.** Sending, wallet generation, acceleration and
+  consolidation go through your own [BitGo Express](#bitgo-express) instance.
+  This library never generates, stores or sees private keys.
+- **Not limited to wrapped fields.** Pass any extra body field with `payload` or query
+  parameter with `params`.
 
-Django BitGo is a powerful and flexible library for connecting your BitGo account and integrate it with your Django project.
+## Contents
 
----
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Quickstart](#quickstart)
+- [BitGo Express](#bitgo-express)
+- [Receiving webhooks in Django](#receiving-webhooks-in-django)
+- [Errors](#errors)
+- [Pagination](#pagination)
+- [API reference](#api-reference)
+- [Endpoints not wrapped](#endpoints-not-wrapped)
+- [Development](#development)
+- [License](#license)
 
-# Requirements
+## Requirements
 
-- Python (3.9, 3.10, 3.11, 3.12, 3.13)
-- Django (4.2, 5.0, 5.1, 5.2)
+- Python 3.9, 3.10, 3.11, 3.12, 3.13
+- Django 4.2, 5.0, 5.1, 5.2
 
-We **highly recommend** and only officially support the latest patch release of
-each Python and Django series.
+Only the latest patch release of each Python and Django series is officially supported.
 
-# Installation
+## Installation
 
-Install using `pip` ...
-
-    pip install django-bitgo
-
-Install using `poetry` ...
-
-```
+```bash
+pip install django-bitgo
+# or
 poetry add django-bitgo
 ```
 
-Add `'django_bitgo'` to your `INSTALLED_APPS` setting.
+Add the app to `INSTALLED_APPS`:
 
 ```python
 INSTALLED_APPS = [
-    ...
-    'django_bitgo',
+    # ...
+    "django_bitgo",
 ]
 ```
 
-# Configuration
+## Configuration
 
-Set these in your Django settings (or environment):
+Create an access token in the BitGo web app (under *Developer Options* in your settings) and
+expose it as the `BITGO_ACCESS_TOKEN` environment variable:
+
+```bash
+export BITGO_ACCESS_TOKEN="v2x..."
+```
+
+Then set any of these in your Django settings. All are optional:
+
+```python
+# settings.py
+BITGO_API_URL = "https://app.bitgo-test.com/"  # production: "https://app.bitgo.com/"
+BITGO_EXPRESS_URL = "http://localhost:3080/"
+BITGO_WALLET_ID = "your-default-wallet-id"
+```
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `BITGO_ACCESS_TOKEN` (env var) | - | Access token used for every request |
-| `BITGO_API_URL` | `https://app.bitgo-test.com/` | BitGo platform (use `https://app.bitgo.com/` in production) |
-| `BITGO_API_VERSION` | `api/v2/` | API prefix |
-| `BITGO_EXPRESS_URL` | `http://localhost:3080/` | Your BitGo Express instance (needed to sign/send) |
-| `BITGO_WALLET_ID` | - | Default wallet id for wallet-scoped resources |
+| `BITGO_API_URL` | `https://app.bitgo-test.com/` | BitGo platform URL. The default is the **test** environment. |
+| `BITGO_API_VERSION` | `api/v2/` | API path prefix |
+| `BITGO_EXPRESS_URL` | `http://localhost:3080/` | Your BitGo Express instance, needed to sign and send |
+| `BITGO_WALLET_ID` | none | Default wallet for wallet-scoped resources |
 
-Every resource accepts an optional `client` (a `BitGoClient`) and, where relevant, a
-default `wallet_id`; any method's `wallet_id`/`coin` argument overrides it. Most methods
-also take `payload` (extra JSON body fields) or `params` (extra query parameters), so any
-field from the [BitGo API reference](https://developers.bitgo.com/reference) can be passed.
+To use a different token per call (for example, per tenant), pass a client explicitly:
+
+```python
+from django_bitgo.client import BitGoClient
+from django_bitgo.wallets.wallet import Wallet
+
+wallet = Wallet(client=BitGoClient(access_token=token), wallet_id=wallet_id)
+```
+
+Every resource takes an optional `client` and a default `wallet_id`. The `wallet_id`
+and `coin` arguments on individual methods override them. Coins use BitGo's tickers
+(`btc`, `eth`, `sol`, ...); on the test environment they are prefixed with `t`
+(`tbtc`, `teth`, ...). Most methods default to `tbtc`.
+
+## Quickstart
+
+```python
+from django_bitgo.wallets.address import Address
+from django_bitgo.wallets.transfer import Transfer
+from django_bitgo.wallets.wallet import Wallet
+
+# List wallets and read a balance
+wallets = Wallet().list_wallets(coin="tbtc")
+wallet = Wallet().get_wallet(wallet_id=WALLET_ID, coin="tbtc")
+print(wallet["label"], wallet["balanceString"])
+
+# Create a deposit address for a customer
+address = Address(wallet_id=WALLET_ID).create_address(
+    coin="tbtc", payload={"label": "customer-42"}
+)
+print(address["address"])
+
+# Read incoming transfers
+transfers = Transfer(wallet_id=WALLET_ID).list_transfers(
+    coin="tbtc", params={"type": "receive", "state": "confirmed"}
+)
+```
+
+> Use the `...String` balance fields (`balanceString`, `spendableBalanceString`) rather
+> than the integer ones. Amounts are in base units (satoshi, wei, ...) and can exceed
+> what an integer field holds.
+
+## BitGo Express
+
+BitGo wallets are multi-signature: a send needs your user key plus BitGo's key. BitGo
+Express is a small server you run yourself. It decrypts the user key locally with the
+wallet passphrase, signs, and forwards the transaction to BitGo. Everything that signs
+goes through it.
+
+Run it next to your app:
+
+```bash
+docker run -it -p 3080:3080 bitgo/express:latest
+# production: add --env prod and TLS (--keypath / --crtpath)
+```
+
+Then send funds:
+
+```python
+import os
+
+from django_bitgo.express import Express
+
+express = Express(wallet_id=WALLET_ID)
+result = express.send_coins(
+    address="tb1q...",
+    amount="10000",  # base units; strings avoid precision issues
+    wallet_passphrase=os.environ["BITGO_WALLET_PASSPHRASE"],
+    coin="tbtc",
+)
+```
+
+If a wallet policy requires approval, the response has a `pendingApproval` instead of a
+`txid`. Handle it with [`PendingApproval`](#pending-approvals).
+
+**Security:** never expose Express to the internet, and keep wallet passphrases in a
+secret store, not in settings files or source control.
+
+## Receiving webhooks in Django
+
+Register a webhook on a wallet:
+
+```python
+from django_bitgo.wallets.webhook import Webhook
+
+Webhook(wallet_id=WALLET_ID).add_wallet_webhook(
+    "transfer", "https://example.com/bitgo/webhook/", coin="tbtc",
+    payload={"numConfirmations": 1},
+)
+```
+
+Then handle it with a view. Treat the notification only as a signal: re-fetch the
+transfer from BitGo rather than trusting the request body.
+
+```python
+import json
+
+from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
+
+from django_bitgo.exceptions import BitGoException
+from django_bitgo.wallets.transfer import Transfer
+
+
+@csrf_exempt
+@require_POST
+def bitgo_webhook(request):
+    event = json.loads(request.body)
+    if event.get("type") != "transfer":
+        return HttpResponse(status=204)
+
+    try:
+        transfer = Transfer(wallet_id=event["wallet"]).get_transfer(
+            transfer_id=event["transfer"], coin=event["coin"]
+        )
+    except BitGoException:
+        return HttpResponse(status=502)  # BitGo retries failed deliveries
+
+    if transfer["state"] == "confirmed":
+        ...  # credit the customer, idempotently keyed on transfer["id"]
+
+    return HttpResponse(status=200)
+```
+
+To check signatures, create a secret with `Webhook().create_webhook_secret(...)`,
+then verify each notification with `Webhook().verify_notification(webhook_id,
+raw_body, signature)`.
 
 ## Errors
 
-All failures raise `django_bitgo.exceptions.BitGoException`. For HTTP errors it carries
-`status_code`, `error_name` (BitGo's `name` code), `request_id` and `response_body`.
+Every failure raises `django_bitgo.exceptions.BitGoException`. For HTTP errors it
+includes BitGo's error details:
+
+```python
+from django_bitgo.exceptions import BitGoException
+
+try:
+    Wallet().get_wallet(wallet_id="missing", coin="tbtc")
+except BitGoException as exc:
+    exc.status_code    # 404
+    exc.error_name     # BitGo's error code, e.g. "WalletNotFound"
+    exc.request_id     # quote this to BitGo support
+    exc.response_body  # the full decoded error body
+```
+
+Missing required arguments (such as an empty `wallet_id`) also raise `BitGoException`,
+before any request is sent.
 
 ## Pagination
 
-List endpoints return BitGo's `nextBatchPrevId`. `iter_pages` follows it for you:
+List endpoints return up to `limit` results (default 25, maximum 500) and a
+`nextBatchPrevId` cursor. `iter_pages` follows the cursor for you:
 
 ```python
 from django_bitgo.resource import iter_pages
 
-for page in iter_pages(Wallet().list_wallets, coin="tbtc"):
+for page in iter_pages(Wallet().list_wallets, coin="tbtc", limit=100):
     for wallet in page["wallets"]:
         ...
 ```
 
-# API Reference
+## API reference
 
-## Wallets
+Each method's docstring names the BitGo endpoint it calls. See the
+[BitGo API reference](https://developers.bitgo.com/reference) for the full request
+and response fields.
+
+### Wallets
 
 ```python
 from django_bitgo.wallets.wallet import Wallet
@@ -106,7 +284,7 @@ wallet.build_consolidate_account(coin=COIN)
 wallet.create_wallet(coin=COIN, payload=payload)
 ```
 
-## Addresses
+### Addresses
 
 ```python
 from django_bitgo.wallets.address import Address
@@ -121,7 +299,7 @@ address.deploy_address(address_id=ADDRESS_ID, coin=COIN)
 address.forward_token(ADDRESS_ID, token_name="terc", coin="teth")
 ```
 
-## Transfers
+### Transfers
 
 ```python
 from django_bitgo.wallets.transfer import Transfer
@@ -136,7 +314,7 @@ transfer.get_fee_estimate(coin=COIN, num_blocks=2)
 transfer.get_transaction(TXID, coin=COIN)
 ```
 
-## Webhooks
+### Webhooks
 
 ```python
 from django_bitgo.wallets.webhook import Webhook
@@ -155,7 +333,7 @@ webhook.create_webhook_secret(enterprise_id=ENTERPRISE_ID)
 webhook.verify_notification(WEBHOOK_ID, raw_body, signature_header)
 ```
 
-## Wallet policies
+### Wallet policies
 
 ```python
 from django_bitgo.wallets.policy import Policy
@@ -168,7 +346,7 @@ policy.remove_rule(rule, coin=COIN)
 policy.get_rules(coin=COIN)
 ```
 
-## Wallet sharing
+### Wallet sharing
 
 ```python
 from django_bitgo.wallets.share import WalletShare
@@ -184,7 +362,7 @@ share.cancel_share(SHARE_ID, coin=COIN)
 share.resend_share_email(SHARE_ID, coin=COIN)
 ```
 
-## Transaction requests
+### Transaction requests
 
 ```python
 from django_bitgo.wallets.tx_request import TxRequest
@@ -198,7 +376,7 @@ tx_request.list_awaiting_signature()
 tx_request.list_enterprise_tx_requests(ENTERPRISE_ID)
 ```
 
-## Pending approvals
+### Pending approvals
 
 ```python
 from django_bitgo.pending_approval import PendingApproval
@@ -213,7 +391,7 @@ approvals.reject(APPROVAL_ID, memo="Not expected")
 approvals.bulk_update([{"id": APPROVAL_ID, "state": "approved"}])
 ```
 
-## Keychains
+### Keychains
 
 ```python
 from django_bitgo.keychain import Keychain
@@ -228,7 +406,7 @@ keychain.create_backup_key(coin=COIN)
 keychain.get_tss_pubkey(coin="tsol")
 ```
 
-## Enterprises
+### Enterprises
 
 ```python
 from django_bitgo.enterprise import Enterprise
@@ -249,7 +427,7 @@ enterprise.remove_webhook(ENTERPRISE_ID, WEBHOOK_ID)
 enterprise.simulate_webhook(ENTERPRISE_ID, WEBHOOK_ID)
 ```
 
-## Users
+### Users
 
 ```python
 from django_bitgo.user import User
@@ -267,11 +445,7 @@ user.add_access_token("ci", otp="000000", payload={"scope": [...]})
 user.delete_access_token(TOKEN_ID)
 ```
 
-## BitGo Express (signing and sending)
-
-Anything that signs with your user key goes through
-[BitGo Express](https://developers.bitgo.com/reference/express-overview), which you run
-yourself, e.g. `docker run -p 3080:3080 bitgo/express:latest`.
+### BitGo Express
 
 ```python
 from django_bitgo.express import Express
@@ -295,10 +469,32 @@ express.canonical_address(ADDRESS, coin="tbch")
 express.is_wallet_address(ADDRESS, keychains=[...], coin="teth")
 ```
 
-## Not covered
+## Endpoints not wrapped
 
-BitGo's platform also exposes product APIs outside wallet custody (Prime trading,
-staking, Go Network settlements, fiat/ACH, KYC/KYB, stablecoin minting, organisation
-management, Lightning), plus low-level TSS signing-protocol endpoints that BitGo
-Express/BitGoJS drive for you. These are not wrapped; you can still call them with
-`BitGoClient().request(method=..., path=...)`.
+BitGo also offers products outside wallet custody: Prime trading, staking, Go Network
+settlements, fiat/ACH, KYC/KYB, stablecoin minting, organisation management and
+Lightning. These are not wrapped, and neither are the low-level TSS signing-protocol
+endpoints that Express drives for you. You can call any of them with the client
+directly:
+
+```python
+from django_bitgo.client import BitGoClient
+
+response = BitGoClient().request(method="GET", path="tbtc/wallet/WALLET_ID/sequenceIds")
+response.json()
+```
+
+## Development
+
+```bash
+poetry install
+poetry run pytest
+poetry run black .
+```
+
+CI runs the test suite and `black --check` across every supported Python and Django
+combination.
+
+## License
+
+[MIT](LICENSE)

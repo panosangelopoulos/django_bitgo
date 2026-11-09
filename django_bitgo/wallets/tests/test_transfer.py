@@ -59,3 +59,65 @@ def test_get_transfer_returns_json(client, requests_mock):
     result = transfer.get_transfer(transfer_id="t1")
 
     assert result == {"id": "t1"}
+
+
+@pytest.mark.parametrize(
+    "call, method, path, body, qs",
+    [
+        (
+            lambda t: t.list_transfers(params={"state": "confirmed"}),
+            "GET",
+            "tbtc/wallet/w1/transfer",
+            None,
+            {"limit": ["25"], "allTokens": ["false"], "state": ["confirmed"]},
+        ),
+        (
+            lambda t: t.get_transfer_by_sequence_id("seq1"),
+            "GET",
+            "tbtc/wallet/w1/transfer/sequenceId/seq1",
+            None,
+            {},
+        ),
+        (
+            lambda t: t.comment_transfer("t1", "hello"),
+            "POST",
+            "tbtc/wallet/w1/transfer/t1/comment",
+            {"comment": "hello"},
+            {},
+        ),
+        (
+            lambda t: t.list_enterprise_transfers("e1", prev_id="p1"),
+            "GET",
+            "enterprise/e1/transfer",
+            None,
+            {"limit": ["25"], "prevId": ["p1"]},
+        ),
+        (
+            lambda t: t.get_fee_estimate(num_blocks=2),
+            "GET",
+            "tbtc/tx/fee",
+            None,
+            {"numBlocks": ["2"]},
+        ),
+        (lambda t: t.get_fee_estimate(), "GET", "tbtc/tx/fee", None, {}),
+        (lambda t: t.get_transaction("tx1"), "GET", "tbtc/tx/tx1", None, {}),
+    ],
+)
+def test_transfer_endpoints(client, check_call, call, method, path, body, qs):
+    transfer = Transfer(client=client, wallet_id="w1")
+
+    check_call(lambda: call(transfer), method, path, body=body, qs=qs)
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda t: t.get_transfer_by_sequence_id(""),
+        lambda t: t.comment_transfer("", "x"),
+        lambda t: t.list_enterprise_transfers(""),
+        lambda t: t.get_transaction(""),
+    ],
+)
+def test_transfer_methods_validate_required_ids(client, call):
+    with pytest.raises(BitGoException):
+        call(Transfer(client=client, wallet_id="w1"))

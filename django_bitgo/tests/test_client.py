@@ -1,7 +1,7 @@
 import pytest
 import requests
 
-from django_bitgo.client import BitGoClient
+from django_bitgo.client import BitGoClient, ExpressClient
 from django_bitgo.exceptions import BitGoException
 
 
@@ -96,3 +96,74 @@ def test_request_raises_bitgo_exception_on_connection_error(requests_mock):
 
     with pytest.raises(BitGoException):
         client.request(method="GET", path="tbtc/wallet/w1/addresses")
+
+
+def test_request_sends_booleans_as_lowercase_strings(requests_mock):
+    client = BitGoClient(access_token="my-token")
+    requests_mock.get("https://app.bitgo-test.com/api/v2/tbtc/wallet", json={})
+
+    client.request(
+        method="GET", path="tbtc/wallet", params={"allTokens": False, "x": True}
+    )
+
+    assert "allTokens=false" in requests_mock.last_request.url
+    assert "x=true" in requests_mock.last_request.url
+
+
+def test_request_drops_none_query_params(requests_mock):
+    client = BitGoClient(access_token="my-token")
+    requests_mock.get("https://app.bitgo-test.com/api/v2/tbtc/wallet", json={})
+
+    client.request(method="GET", path="tbtc/wallet", params={"a": None, "b": 1})
+
+    assert requests_mock.last_request.qs == {"b": ["1"]}
+
+
+def test_http_error_exposes_bitgo_error_details(requests_mock):
+    client = BitGoClient(access_token="my-token")
+    requests_mock.get(
+        "https://app.bitgo-test.com/api/v2/tbtc/wallet/w1",
+        status_code=404,
+        json={"error": "wallet not found", "name": "WalletNotFound", "requestId": "r1"},
+    )
+
+    with pytest.raises(BitGoException) as exc:
+        client.request(method="GET", path="tbtc/wallet/w1")
+
+    assert exc.value.status_code == 404
+    assert exc.value.error_name == "WalletNotFound"
+    assert exc.value.request_id == "r1"
+    assert exc.value.response_body["error"] == "wallet not found"
+    assert "wallet not found" in str(exc.value)
+
+
+def test_http_error_with_non_json_body(requests_mock):
+    client = BitGoClient(access_token="my-token")
+    requests_mock.get(
+        "https://app.bitgo-test.com/api/v2/tbtc/wallet", status_code=502, text="bad"
+    )
+
+    with pytest.raises(BitGoException) as exc:
+        client.request(method="GET", path="tbtc/wallet")
+
+    assert exc.value.status_code == 502
+    assert exc.value.response_body is None
+
+
+def test_api_url_override(requests_mock):
+    client = BitGoClient(access_token="my-token", api_url="https://other.example/")
+    requests_mock.get("https://other.example/api/v2/tbtc/wallet", json={})
+
+    client.request(method="GET", path="tbtc/wallet")
+
+    assert requests_mock.called
+
+
+def test_express_client_defaults_to_express_url(requests_mock):
+    client = ExpressClient(access_token="my-token")
+    requests_mock.get("http://localhost:3080/api/v2/pingexpress", json={})
+
+    client.request(method="GET", path="pingexpress")
+
+    assert client.get_api_url() == "http://localhost:3080/"
+    assert requests_mock.called

@@ -82,3 +82,47 @@ def test_deploy_address_posts_to_deployment_endpoint(client, requests_mock):
     result = address.deploy_address(address_id="addr1")
 
     assert result == {"deployed": True}
+
+
+def test_list_addresses_requires_wallet_id(client):
+    with pytest.raises(BitGoException):
+        Address(client=client).list_addresses()
+
+
+@pytest.mark.parametrize(
+    "call, method, path, body, qs",
+    [
+        (
+            lambda a: a.list_addresses(limit=10, prev_id="p1", params={"chains": 0}),
+            "GET",
+            "tbtc/wallet/w1/addresses",
+            None,
+            {"limit": ["10"], "prevId": ["p1"], "chains": ["0"]},
+        ),
+        (
+            lambda a: a.update_address("addr1", {"label": "cold"}),
+            "PUT",
+            "tbtc/wallet/w1/address/addr1",
+            {"label": "cold"},
+            {},
+        ),
+        (
+            lambda a: a.list_address_balances(coin="teth"),
+            "GET",
+            "teth/wallet/w1/addresses/balances",
+            None,
+            {},
+        ),
+        (
+            lambda a: a.forward_token("addr1", "terc"),
+            "POST",
+            "teth/wallet/w1/address/addr1/tokenforward",
+            {"tokenName": "terc"},
+            {},
+        ),
+    ],
+)
+def test_address_endpoints(client, check_call, call, method, path, body, qs):
+    address = Address(client=client, wallet_id="w1")
+
+    check_call(lambda: call(address), method, path, body=body, qs=qs)

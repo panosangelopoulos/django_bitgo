@@ -4,6 +4,8 @@ from django.conf import settings
 
 from django_bitgo.exceptions import BitGoException
 
+DEFAULT_API_URL = "https://app.bitgo-test.com/"
+DEFAULT_API_VERSION = "api/v2/"
 DEFAULT_EXPRESS_URL = "http://localhost:3080/"
 
 
@@ -89,10 +91,12 @@ class BitGoClient(object):
         )
 
     def get_api_url(self):
-        return self.api_url or settings.BITGO_API_URL
+        return (
+            self.api_url or getattr(settings, "BITGO_API_URL", None) or DEFAULT_API_URL
+        )
 
     def get_api_version(self):
-        return settings.BITGO_API_VERSION
+        return getattr(settings, "BITGO_API_VERSION", None) or DEFAULT_API_VERSION
 
 
 class ExpressClient(BitGoClient):

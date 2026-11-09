@@ -167,3 +167,16 @@ def test_express_client_defaults_to_express_url(requests_mock):
 
     assert client.get_api_url() == "http://localhost:3080/"
     assert requests_mock.called
+
+
+def test_client_defaults_when_settings_are_not_defined(monkeypatch, requests_mock):
+    from django.conf import settings
+
+    monkeypatch.delattr(settings, "BITGO_API_URL")
+    monkeypatch.delattr(settings, "BITGO_API_VERSION")
+    client = BitGoClient(access_token="my-token")
+    requests_mock.get("https://app.bitgo-test.com/api/v2/tbtc/wallet", json={})
+
+    client.request(method="GET", path="tbtc/wallet")
+
+    assert requests_mock.called

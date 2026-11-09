@@ -12,7 +12,12 @@ https://docs.djangoproject.com/en/4.1/ref/settings/
 
 from pathlib import Path
 
-from django_bitgo.settings import BITGO_API_URL, BITGO_API_VERSION, BITGO_WALLET_ID
+from django_bitgo.settings import (
+    BITGO_API_URL,
+    BITGO_API_VERSION,
+    BITGO_EXPRESS_URL,
+    BITGO_WALLET_ID,
+)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
